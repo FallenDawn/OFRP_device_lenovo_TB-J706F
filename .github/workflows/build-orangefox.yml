@@ -87,7 +87,10 @@ jobs:
           mkdir -p "$GITHUB_WORKSPACE/OrangeFox_sync"
           git clone --depth=1 https://gitlab.com/OrangeFox/sync.git \
             "$GITHUB_WORKSPACE/OrangeFox_sync/sync"
-          bash "$GITHUB_WORKSPACE/OrangeFox_sync/sync/orangefox_sync.sh" \
+          cd "$GITHUB_WORKSPACE/OrangeFox_sync/sync"
+          # The official script resolves its patches/ directory from the
+          # current working directory, so run it from the cloned sync repo.
+          bash ./orangefox_sync.sh \
             --branch 12.1 --path "$GITHUB_WORKSPACE/fox_12.1" \
             2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
 
