@@ -23,7 +23,7 @@ Apply from the Android source root with the companion script:
 diff --git a/fastboot/device/fastboot_device.cpp b/fastboot/device/fastboot_device.cpp
 --- a/fastboot/device/fastboot_device.cpp
 +++ b/fastboot/device/fastboot_device.cpp
-@@ -107,13 +107,25 @@ std::string FastbootDevice::GetCurrentSlot() {
+@@ -107,13 +107,24 @@ std::string FastbootDevice::GetCurrentSlot() {
      if (!active_slot_.empty()) {
          return active_slot_;
      }
@@ -57,7 +57,7 @@ diff --git a/fastboot/device/fastboot_device.cpp b/fastboot/device/fastboot_devi
 diff --git a/fastboot/device/variables.cpp b/fastboot/device/variables.cpp
 --- a/fastboot/device/variables.cpp
 +++ b/fastboot/device/variables.cpp
-@@ -186,11 +186,15 @@ bool GetSlotCount(FastbootDevice* device, const std::vector<std::string>& /* ar
+@@ -186,10 +186,14 @@ bool GetSlotCount(FastbootDevice* device, const std::vector<std::string>& /* ar
                    std::string* message) {
      auto boot_control_hal = device->boot_control_hal();
 -    if (!boot_control_hal) {
