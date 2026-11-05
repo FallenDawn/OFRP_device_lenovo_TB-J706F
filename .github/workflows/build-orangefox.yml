@@ -1,0 +1,173 @@
+name: Build OrangeFox Recovery (TB-J706F)
+
+on:
+  push:
+    branches:
+      - fix/pearl-prc-wifi-fastbootd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orangefox-pearl-prc-wifi-build
+  cancel-in-progress: false
+
+jobs:
+  build-recovery:
+    # Public-repository standard runner: 4 vCPU / 16 GB RAM / 14 GB base SSD.
+    # The disk action also consumes the runner's temporary volume and creates swap.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    steps:
+      - name: Maximize build disk and swap
+        uses: easimon/maximize-build-space@v10
+        with:
+          root-reserve-mb: 2048
+          temp-reserve-mb: 2048
+          swap-size-mb: 16384
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+
+      - name: Check out device tree
+        uses: actions/checkout@v4
+        with:
+          path: device-tree
+          ref: fix/pearl-prc-wifi-fastbootd
+          fetch-depth: 1
+
+      - name: Check runner resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "===== Disk ====="
+          df -h
+          echo "===== Memory and swap ====="
+          free -h
+          echo "===== CPU ====="
+          nproc
+          echo "===== Device tree size ====="
+          du -sh "$GITHUB_WORKSPACE/device-tree"
+
+      - name: Install Android build dependencies and repo
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            bc bison build-essential ccache curl flex g++-multilib gcc-multilib \
+            git git-lfs gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev \
+            lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev \
+            libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools \
+            xsltproc zip zlib1g-dev libelf-dev python3 python-is-python3 \
+            ca-certificates file cpio lzma
+          mkdir -p "$HOME/bin"
+          curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o "$HOME/bin/repo"
+          chmod 0755 "$HOME/bin/repo"
+          echo "$HOME/bin" >> "$GITHUB_PATH"
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+          git lfs install
+
+      - name: Sync official OrangeFox fox_12.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/OrangeFox_sync"
+          git clone --depth=1 https://gitlab.com/OrangeFox/sync.git \
+            "$RUNNER_TEMP/OrangeFox_sync/sync"
+          bash "$RUNNER_TEMP/OrangeFox_sync/sync/orangefox_sync.sh" \
+            --branch 12.1 --path "$RUNNER_TEMP/fox_12.1" \
+            2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+
+      - name: Install TB-J706F device tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOX_ROOT="$RUNNER_TEMP/fox_12.1"
+          test -f "$FOX_ROOT/build/envsetup.sh"
+          mkdir -p "$FOX_ROOT/device/lenovo/pearl_prc_wifi"
+          rsync -a --delete --exclude='.git' \
+            "$GITHUB_WORKSPACE/device-tree/" \
+            "$FOX_ROOT/device/lenovo/pearl_prc_wifi/"
+          test -f "$FOX_ROOT/device/lenovo/pearl_prc_wifi/BoardConfig.mk"
+          test -f "$FOX_ROOT/device/lenovo/pearl_prc_wifi/vendorsetup.sh"
+          bash -n "$FOX_ROOT/device/lenovo/pearl_prc_wifi/vendorsetup.sh"
+          bash -n "$FOX_ROOT/device/lenovo/pearl_prc_wifi/scripts/apply-fastboot-slot-fallback.sh"
+
+      - name: Apply fastbootd slot fallback patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/fox_12.1"
+          bash device/lenovo/pearl_prc_wifi/scripts/apply-fastboot-slot-fallback.sh
+          git -C system/core diff --check
+          git -C system/core diff -- fastboot/device/fastboot_device.cpp fastboot/device/variables.cpp
+
+      - name: Build OrangeFox recovery image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/fox_12.1"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE=pearl_prc_wifi
+          export LC_ALL=C
+          source device/lenovo/pearl_prc_wifi/vendorsetup.sh
+          source build/envsetup.sh
+          lunch twrp_pearl_prc_wifi-eng
+          mka -j2 adbd recoveryimage 2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
+          test -d out/target/product/pearl_prc_wifi
+
+      - name: Validate recovery ramdisk and image
+        shell: bash
+        run: |
+          set -euo pipefail
+          FOX_ROOT="$RUNNER_TEMP/fox_12.1"
+          PRODUCT="$FOX_ROOT/out/target/product/pearl_prc_wifi"
+          OUT="$GITHUB_WORKSPACE/artifacts"
+          mkdir -p "$OUT"
+
+          ROOT="$PRODUCT/recovery/root"
+          if [[ ! -d "$ROOT" ]]; then
+            ROOT="$PRODUCT/root"
+          fi
+          test -f "$ROOT/etc/recovery.fstab"
+          test -f "$ROOT/etc/twrp.fstab"
+          cmp -s "$ROOT/etc/recovery.fstab" "$GITHUB_WORKSPACE/device-tree/recovery.fstab"
+          grep -q '^/data[[:space:]]' "$ROOT/etc/twrp.fstab"
+          grep -q '^/system[[:space:]]' "$ROOT/etc/twrp.fstab"
+          grep -q '^/vendor[[:space:]]' "$ROOT/etc/twrp.fstab"
+          test -f "$ROOT/vendor/etc/vintf/manifest.xml"
+          test -f "$ROOT/vendor/bin/hw/android.hardware.keymaster@4.0-service-qti"
+
+          IMAGE="$(find "$PRODUCT" -maxdepth 1 -type f \
+            \( -name 'OrangeFox-*.img' -o -name 'recovery.img' \) \
+            -printf '%T@ %p\n' | sort -nr | head -n1 | cut -d' ' -f2-)"
+          test -n "$IMAGE"
+          SIZE="$(stat -c '%s' "$IMAGE")"
+          echo "Image: $IMAGE"
+          echo "Size: $SIZE bytes"
+          # TB-J706F recovery_a/recovery_b are 96 MiB.
+          if (( SIZE > 100663296 )); then
+            echo "ERROR: recovery image exceeds the 96 MiB recovery partition." >&2
+            exit 1
+          fi
+          cp "$IMAGE" "$OUT/OrangeFox-pearl_prc_wifi.img"
+          sha256sum "$OUT/OrangeFox-pearl_prc_wifi.img" | tee "$OUT/SHA256SUMS.txt"
+          file "$OUT/OrangeFox-pearl_prc_wifi.img" | tee "$OUT/image-file.txt"
+          tar -czf "$OUT/device-tree-used.tar.gz" -C "$GITHUB_WORKSPACE" device-tree
+
+      - name: Upload recovery image, checksum, source snapshot, and build log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-pearl_prc_wifi-${{ github.sha }}
+          path: |
+            artifacts/
+            build.log
+          if-no-files-found: warn
+          compression-level: 0
+          retention-days: 30
