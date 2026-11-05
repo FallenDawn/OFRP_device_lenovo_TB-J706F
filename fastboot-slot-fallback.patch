@@ -1,0 +1,82 @@
+From: TB-J706F fastbootd audit
+Subject: [PATCH] fastbootd: fall back to ro.boot.slot_suffix when no boot control HAL
+
+Some recovery images (including OrangeFox R12.0 for pearl_prc_wifi) do not
+start android.hardware.boot@1.0::IBootControl in the recovery ramdisk.
+AOSP fastbootd derives current-slot/slot-count exclusively from that HAL, so
+it reports:
+
+    current-slot:
+    slot-count: 0
+
+and, because GetHasSlot() returns "no" for an empty suffix, the host never
+appends "_b" when flashing. On an A/B dynamic device this either fails with
+"Failed to identify current slot" or targets the wrong partition.
+
+Real-device confirmation (2026-11-05, serial HA1CGHCP):
+- /vendor/bin/hw has keymaster only, NO android.hardware.boot@1.0-service
+- ro.boot.slot_suffix=_b, ro.build.ab_update=true are present
+
+Fall back to the slot suffix exported by the bootloader. For slot count,
+infer 2 slots when ro.build.ab_update or ro.boot.slot_suffix is present.
+The HAL remains the primary source, so behaviour on devices that do run the
+boot control HAL is unchanged.
+
+Apply from the system/core directory:
+    cd system/core && git apply /path/to/fastboot-slot-fallback.patch
+
+diff --git a/fastboot/device/fastboot_device.cpp b/fastboot/device/fastboot_device.cpp
+--- a/fastboot/device/fastboot_device.cpp
++++ b/fastboot/device/fastboot_device.cpp
+@@ -107,13 +107,25 @@ std::string FastbootDevice::GetCurrentSlot() {
+     if (!active_slot_.empty()) {
+         return active_slot_;
+     }
+-    // Non-A/B devices must not have boot control HALs.
+-    if (!boot_control_hal_) {
+-        return "";
++    if (boot_control_hal_) {
++        std::string suffix;
++        auto cb = [&suffix](hidl_string s) { suffix = s; };
++        boot_control_hal_->getSuffix(boot_control_hal_->getCurrentSlot(), cb);
++        if (!suffix.empty()) {
++            return suffix;
++        }
+     }
+-    std::string suffix;
+-    auto cb = [&suffix](hidl_string s) { suffix = s; };
+-    boot_control_hal_->getSuffix(boot_control_hal_->getCurrentSlot(), cb);
++
++    // Recovery may not run a boot control HAL. Fall back to the slot suffix
++    // exported by the bootloader so slot-suffixed partitions can still be
++    // addressed (has-slot, is-logical, resize-logical-partition, flash).
++    std::string suffix = android::base::GetProperty("ro.boot.slot_suffix", "");
++    if (suffix.empty()) {
++        suffix = android::base::GetProperty("ro.boot.slot", "");
++    }
++    if (!suffix.empty() && suffix[0] != '_') {
++        suffix.insert(0, "_");
++    }
+     return suffix;
+ }
+ 
+diff --git a/fastboot/device/variables.cpp b/fastboot/device/variables.cpp
+--- a/fastboot/device/variables.cpp
++++ b/fastboot/device/variables.cpp
+@@ -186,11 +186,15 @@ bool GetSlotCount(FastbootDevice* device, const std::vector<std::string>& /* ar
+                   std::string* message) {
+     auto boot_control_hal = device->boot_control_hal();
+-    if (!boot_control_hal) {
+-        *message = "0";
+-    } else {
++    if (boot_control_hal) {
+         *message = std::to_string(boot_control_hal->getNumberSlots());
++        return true;
+     }
++
++    // No boot control HAL: infer A/B from build/bootloader properties.
++    bool ab = android::base::GetBoolProperty("ro.build.ab_update", false) ||
++              !android::base::GetProperty("ro.boot.slot_suffix", "").empty();
++    *message = ab ? "2" : "0";
+     return true;
+ }
