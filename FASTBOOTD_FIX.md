@@ -31,7 +31,7 @@ bash device/lenovo/pearl_prc_wifi/scripts/apply-fastboot-slot-fallback.sh
 - `etc/recovery.fstab` 是 fs_mgr 五列格式，且只有 metadata、misc 两条；
 - `etc/twrp.fstab` 是原始 TWRP 四列格式，且包含 data、logical partitions 等条目。
 
-设备验证必须在真正的 userspace fastbootd 中进行（`is-userspace: yes`），不要用从 recovery 直接改 `sys.usb.config=fastboot` 的方式代替正式路径。
+设备验证必须确认处于 userspace fastbootd（`fastboot getvar is-userspace` 返回 `yes`）。本设备此前已验证可从 OrangeFox 通过 `adb shell "setprop sys.usb.config none; sleep 2; setprop sys.usb.config fastboot"` 进入；如果继续使用这条路径，每次都要重新确认 `is-userspace: yes`，不能只凭 USB 连接模式判断。
 
 建议只读 getvar 检查：
 
