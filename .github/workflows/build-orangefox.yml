@@ -20,17 +20,25 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 360
     steps:
-      - name: Maximize build disk and swap
-        uses: easimon/maximize-build-space@v10
-        with:
-          root-reserve-mb: 2048
-          temp-reserve-mb: 2048
-          swap-size-mb: 16384
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
+      - name: Prepare swap on the runner root volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The first runner exposed 87 GiB free on / but almost no free space
+          # on /mnt; avoid trying to allocate an LVM PV on /mnt.
+          sudo fallocate -l 12G /swapfile-orangefox
+          sudo chmod 600 /swapfile-orangefox
+          sudo mkswap /swapfile-orangefox
+          sudo swapon /swapfile-orangefox
+          echo "===== Disk after swap allocation ====="
+          df -h "$GITHUB_WORKSPACE"
+          echo "===== Memory and swap ====="
+          free -h
+          AVAILABLE_GB="$(df -BG --output=avail "$GITHUB_WORKSPACE" | tail -1 | tr -dc '0-9')"
+          if (( AVAILABLE_GB < 62 )); then
+            echo "ERROR: only ${AVAILABLE_GB} GiB free; OrangeFox fox_12.1 sync/build needs more working space." >&2
+            exit 1
+          fi
 
       - name: Check out device tree
         uses: actions/checkout@v4
