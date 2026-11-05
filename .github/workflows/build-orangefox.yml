@@ -10,8 +10,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: orangefox-pearl-prc-wifi-build
-  cancel-in-progress: true
+  group: orangefox-pearl-prc-wifi-build-v2
+  cancel-in-progress: false
 
 jobs:
   build-recovery:
