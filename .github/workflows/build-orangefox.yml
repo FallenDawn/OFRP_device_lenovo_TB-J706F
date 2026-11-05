@@ -76,18 +76,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/OrangeFox_sync"
+          mkdir -p "$GITHUB_WORKSPACE/OrangeFox_sync"
           git clone --depth=1 https://gitlab.com/OrangeFox/sync.git \
-            "$RUNNER_TEMP/OrangeFox_sync/sync"
-          bash "$RUNNER_TEMP/OrangeFox_sync/sync/orangefox_sync.sh" \
-            --branch 12.1 --path "$RUNNER_TEMP/fox_12.1" \
+            "$GITHUB_WORKSPACE/OrangeFox_sync/sync"
+          bash "$GITHUB_WORKSPACE/OrangeFox_sync/sync/orangefox_sync.sh" \
+            --branch 12.1 --path "$GITHUB_WORKSPACE/fox_12.1" \
             2>&1 | tee -a "$GITHUB_WORKSPACE/build.log"
 
       - name: Install TB-J706F device tree
         shell: bash
         run: |
           set -euo pipefail
-          FOX_ROOT="$RUNNER_TEMP/fox_12.1"
+          FOX_ROOT="$GITHUB_WORKSPACE/fox_12.1"
           test -f "$FOX_ROOT/build/envsetup.sh"
           mkdir -p "$FOX_ROOT/device/lenovo/pearl_prc_wifi"
           rsync -a --delete --exclude='.git' \
@@ -102,7 +102,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/fox_12.1"
+          cd "$GITHUB_WORKSPACE/fox_12.1"
           bash device/lenovo/pearl_prc_wifi/scripts/apply-fastboot-slot-fallback.sh
           git -C system/core diff --check
           git -C system/core diff -- fastboot/device/fastboot_device.cpp fastboot/device/variables.cpp
@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cd "$RUNNER_TEMP/fox_12.1"
+          cd "$GITHUB_WORKSPACE/fox_12.1"
           export ALLOW_MISSING_DEPENDENCIES=true
           export FOX_BUILD_DEVICE=pearl_prc_wifi
           export LC_ALL=C
@@ -125,7 +125,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          FOX_ROOT="$RUNNER_TEMP/fox_12.1"
+          FOX_ROOT="$GITHUB_WORKSPACE/fox_12.1"
           PRODUCT="$FOX_ROOT/out/target/product/pearl_prc_wifi"
           OUT="$GITHUB_WORKSPACE/artifacts"
           mkdir -p "$OUT"
