@@ -102,18 +102,18 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          IMG="$FOX_DIR/out/target/product/pearl_prc_wifi/recovery.img"
+          IMG="$FOX_DIR/out/target/product/pearl_prc_wifi/OrangeFox-unofficial-pearl_prc_wifi.img"
           test -s "$IMG"
           SIZE=$(stat -c '%s' "$IMG")
           MAX=100663296
-          echo "recovery.img size: $SIZE bytes"
+          echo "OrangeFox recovery image size: $SIZE bytes"
           if (( SIZE > MAX )); then
             echo "ERROR: recovery.img exceeds the 96 MiB recovery partition." >&2
             exit 1
           fi
           sha256sum "$IMG" | tee "$GITHUB_WORKSPACE/recovery-sha256.txt"
           mkdir -p "$GITHUB_WORKSPACE/output"
-          cp "$IMG" "$GITHUB_WORKSPACE/output/recovery.img"
+          cp "$IMG" "$GITHUB_WORKSPACE/output/OrangeFox-TB-J706F-recovery.img"
           cp "$GITHUB_WORKSPACE/recovery-sha256.txt" "$GITHUB_WORKSPACE/output/"
           cp "$GITHUB_WORKSPACE/orangefox-build.log" "$GITHUB_WORKSPACE/output/"
 
