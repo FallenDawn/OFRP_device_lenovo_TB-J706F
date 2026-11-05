@@ -1,10 +1,7 @@
-/system         ext4     system                                     flags=display=system;logical;slotselect;fsflags=ro
-/system_ext     ext4     system_ext                                 flags=display=system_ext;logical;slotselect;fsflags=ro
-/vendor         ext4     vendor                                     flags=display=vendor;logical;slotselect;mounttodecrypt;fsflags=ro
-/product        ext4     product                                    flags=display=product;logical;slotselect;fsflags=ro
-/metadata       ext4     /dev/block/bootdevice/by-name/metadata     flags=display=metadata;mounttodecrypt
-/data           f2fs     /dev/block/bootdevice/by-name/userdata     flags=display=data;fileencryption=ice:aes-256-cts:v1+wrappedkey_v0
-/external_sd    vfat     /dev/block/mmcblk1p1                       flags=display="Micro SDcard";storage;removable
-/boot           emmc     /dev/block/bootdevice/by-name/boot         flags=display=boot;slotselect
-/recovery       emmc     /dev/block/bootdevice/by-name/recovery     flags=display=recovery;slotselect
-/misc           emmc     /dev/block/bootdevice/by-name/misc         flags=display=misc
+# /etc/recovery.fstab — Android fs_mgr format.
+# Kept separate from /etc/twrp.fstab: init/fastbootd parse this file.
+# TWRP/OFRP partition management parses /etc/twrp.fstab instead.
+#
+# <src>                                                <mnt_point>  <type> <mnt_flags>                         <fs_mgr_flags>
+/dev/block/bootdevice/by-name/metadata                 /metadata    ext4   noatime,nosuid,nodev,discard         wait,check
+/dev/block/bootdevice/by-name/misc                     /misc        emmc   defaults                             defaults
