@@ -1,0 +1,46 @@
+name: Validate TB-J706F recovery tree
+
+on:
+  push:
+    branches:
+      - fix/pearl-prc-wifi-fastbootd
+  pull_request:
+    branches:
+      - fix/pearl-prc-wifi-fastbootd
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  static-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out device tree
+        uses: actions/checkout@v4
+
+      - name: Validate ramdisk fstab split
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmp -s recovery.fstab recovery/root/etc/recovery.fstab
+          awk 'NF && $1 !~ /^#/ { if (NF != 5) { print "Invalid fs_mgr fstab line " NR ": " $0; exit 1 } }' recovery.fstab
+          grep -q '^/data[[:space:]]' recovery/root/etc/twrp.fstab
+          grep -q '^/system[[:space:]]' recovery/root/etc/twrp.fstab
+          grep -q '^/vendor[[:space:]]' recovery/root/etc/twrp.fstab
+          grep -q '^/misc[[:space:]]' recovery.fstab
+          grep -q '^/metadata[[:space:]]' recovery.fstab
+          bash -n scripts/apply-fastboot-slot-fallback.sh
+
+      - name: Check patch against AOSP android-12.1.0_r27
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --depth 1 --branch android-12.1.0_r27 \
+            https://github.com/aosp-mirror/platform_system_core.git \
+            "$RUNNER_TEMP/system-core"
+          git -C "$RUNNER_TEMP/system-core" apply --check \
+            "$GITHUB_WORKSPACE/patches/fastboot-slot-fallback.patch"
+          git -C "$RUNNER_TEMP/system-core" apply \
+            "$GITHUB_WORKSPACE/patches/fastboot-slot-fallback.patch"
+          git -C "$RUNNER_TEMP/system-core" diff --check
