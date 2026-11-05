@@ -4,6 +4,20 @@ on:
   push:
     branches:
       - fix/pearl-prc-wifi-fastbootd
+    paths:
+      - 'BoardConfig.mk'
+      - 'device.mk'
+      - 'Android.bp'
+      - 'Android.mk'
+      - 'AndroidProducts.mk'
+      - 'fox_pearl_prc_wifi.mk'
+      - 'twrp_pearl_prc_wifi.mk'
+      - 'vendorsetup.sh'
+      - 'recovery.fstab'
+      - 'recovery/**'
+      - 'prebuilt/**'
+      - 'patches/**'
+      - 'scripts/**'
   workflow_dispatch:
 
 permissions:
