@@ -28,8 +28,7 @@ jobs:
           grep -q '^/data[[:space:]]' recovery/root/etc/twrp.fstab
           grep -q '^/system[[:space:]]' recovery/root/etc/twrp.fstab
           grep -q '^/vendor[[:space:]]' recovery/root/etc/twrp.fstab
-          grep -q '^/misc[[:space:]]' recovery.fstab
-          grep -q '^/metadata[[:space:]]' recovery.fstab
+          awk '$2 == "/metadata" { metadata=1 } $2 == "/misc" { misc=1 } END { if (!metadata || !misc) exit 1 }' recovery.fstab
           bash -n scripts/apply-fastboot-slot-fallback.sh
 
       - name: Check patch against AOSP android-12.1.0_r27
