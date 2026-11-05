@@ -24,7 +24,7 @@ sudo apt install -y git git-lfs curl wget rsync unzip zip bc bison build-essenti
   lzop pngcrush schedtool squashfs-tools xsltproc zip zlib1g-dev python3 python-is-python3
 ```
 
-Install Google's `repo` launcher:
+Create the persistent build directory and give it to the non-root runner account (replace `<runner-user>` with that Linux account):\n\n```bash\nsudo mkdir -p /opt/orangefox\nsudo chown -R <runner-user>:<runner-user> /opt/orangefox\n```\n\nInstall Google's `repo` launcher:
 
 ```bash
 sudo curl -fsSL https://storage.googleapis.com/git-repo-downloads/repo -o /usr/local/bin/repo
