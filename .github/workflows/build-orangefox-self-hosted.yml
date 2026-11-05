@@ -1,0 +1,127 @@
+name: Build OrangeFox Recovery (self-hosted)
+
+on:
+  workflow_dispatch:
+    inputs:
+      clean_output:
+        description: "Delete only the previous out/ directory before building"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: orangefox-pearl-prc-wifi-build
+  cancel-in-progress: false
+
+jobs:
+  build-recovery:
+    # Configure an Ubuntu self-hosted runner on Unraid with these labels.
+    # No GitHub-hosted larger runner or paid compute is used.
+    runs-on: [self-hosted, linux, x64, orangefox-build]
+    timeout-minutes: 720
+    env:
+      FOX_DIR: /opt/orangefox/fox_12.1
+      DEVICE_PATH: device/lenovo/pearl_prc_wifi
+      DEVICE_REPO: https://github.com/FallenDawn/OFRP_device_lenovo_TB-J706F.git
+      DEVICE_BRANCH: fix/pearl-prc-wifi-fastbootd
+    steps:
+      - name: Checkout device tree
+        uses: actions/checkout@v4
+        with:
+          ref: fix/pearl-prc-wifi-fastbootd
+          path: device-tree
+
+      - name: Check runner capacity
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v git
+          command -v repo
+          command -v python3
+          command -v rsync
+          df -h "$(dirname "$FOX_DIR")"
+          free -h
+          mkdir -p "$(dirname "$FOX_DIR")"
+
+      - name: Sync official OrangeFox fox_12.1 sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! -x "$HOME/OrangeFox_sync/sync/orangefox_sync.sh" ]]; then
+            mkdir -p "$HOME/OrangeFox_sync"
+            git clone https://gitlab.com/OrangeFox/sync.git "$HOME/OrangeFox_sync/sync"
+          else
+            git -C "$HOME/OrangeFox_sync/sync" pull --ff-only
+          fi
+          if [[ ! -d "$FOX_DIR/.repo" ]]; then
+            "$HOME/OrangeFox_sync/sync/orangefox_sync.sh" --branch 12.1 --path "$FOX_DIR"
+          else
+            cd "$FOX_DIR"
+            repo sync -c --no-clone-bundle --no-tags -j"$(nproc)" || repo sync -c -j"$(nproc)"
+          fi
+
+      - name: Install this device tree into source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$FOX_DIR/$DEVICE_PATH"
+          rsync -a --delete --exclude='.git' "$GITHUB_WORKSPACE/device-tree/" "$FOX_DIR/$DEVICE_PATH/"
+          test -f "$FOX_DIR/$DEVICE_PATH/BoardConfig.mk"
+          test -f "$FOX_DIR/$DEVICE_PATH/recovery/root/etc/twrp.fstab"
+          cmp "$FOX_DIR/$DEVICE_PATH/recovery.fstab" "$FOX_DIR/$DEVICE_PATH/recovery/root/etc/recovery.fstab"
+
+      - name: Apply and validate fastbootd slot fallback
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$FOX_DIR"
+          bash "$DEVICE_PATH/scripts/apply-fastboot-slot-fallback.sh"
+          git -C system/core diff --check
+
+      - name: Build recovery image
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$FOX_DIR"
+          export ALLOW_MISSING_DEPENDENCIES=true
+          export FOX_BUILD_DEVICE=pearl_prc_wifi
+          export FOX_AB_DEVICE=1
+          export FOX_VANILLA_BUILD=1
+          export LC_ALL=C
+          if [[ "${{ inputs.clean_output }}" == "true" ]]; then
+            rm -rf out
+          fi
+          source build/envsetup.sh
+          lunch twrp_pearl_prc_wifi-eng
+          mka -j"$(nproc)" adbd recoveryimage 2>&1 | tee "$GITHUB_WORKSPACE/orangefox-build.log"
+
+      - name: Verify recovery image
+        shell: bash
+        run: |
+          set -euo pipefail
+          IMG="$FOX_DIR/out/target/product/pearl_prc_wifi/recovery.img"
+          test -s "$IMG"
+          SIZE=$(stat -c '%s' "$IMG")
+          MAX=100663296
+          echo "recovery.img size: $SIZE bytes"
+          if (( SIZE > MAX )); then
+            echo "ERROR: recovery.img exceeds the 96 MiB recovery partition." >&2
+            exit 1
+          fi
+          sha256sum "$IMG" | tee "$GITHUB_WORKSPACE/recovery-sha256.txt"
+          mkdir -p "$GITHUB_WORKSPACE/output"
+          cp "$IMG" "$GITHUB_WORKSPACE/output/recovery.img"
+          cp "$GITHUB_WORKSPACE/recovery-sha256.txt" "$GITHUB_WORKSPACE/output/"
+          cp "$GITHUB_WORKSPACE/orangefox-build.log" "$GITHUB_WORKSPACE/output/"
+
+      - name: Upload recovery image and build log
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: OrangeFox-TB-J706F-recovery-${{ github.run_number }}
+          path: output/
+          if-no-files-found: error
+          retention-days: 30
